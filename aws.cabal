@@ -1,5 +1,5 @@
 Name:                aws
-Version:             0.13.0
+Version:             0.16
 Synopsis:            Amazon Web Services (AWS) for Haskell
 Description:         Bindings for Amazon Web Services (AWS), with the aim of supporting all AWS services. To see a high level overview of the library, see the README at <https://github.com/aristidb/aws/blob/master/README.md>.
 Homepage:            http://github.com/aristidb/aws
@@ -19,7 +19,7 @@ Cabal-version:       >=1.10
 Source-repository this
   type: git
   location: https://github.com/aristidb/aws.git
-  tag: 0.13.0
+  tag: 0.16
 
 Source-repository head
   type: git
@@ -36,6 +36,8 @@ Library
                        Aws.Core
                        Aws.DynamoDb
                        Aws.DynamoDb.Commands
+                       Aws.DynamoDb.Commands.BatchGetItem
+                       Aws.DynamoDb.Commands.BatchWriteItem
                        Aws.DynamoDb.Commands.DeleteItem
                        Aws.DynamoDb.Commands.GetItem
                        Aws.DynamoDb.Commands.PutItem
@@ -69,9 +71,11 @@ Library
                        Aws.S3.Commands.CopyObject
                        Aws.S3.Commands.DeleteBucket
                        Aws.S3.Commands.DeleteObject
+                       Aws.S3.Commands.DeleteObjectVersion
                        Aws.S3.Commands.DeleteObjects
                        Aws.S3.Commands.GetBucket
                        Aws.S3.Commands.GetBucketLocation
+                       Aws.S3.Commands.GetBucketObjectVersions
                        Aws.S3.Commands.GetObject
                        Aws.S3.Commands.GetService
                        Aws.S3.Commands.HeadObject
@@ -113,7 +117,6 @@ Library
                        attoparsec           >= 0.11    && < 0.14,
                        base                 >= 4.6     && < 5,
                        base16-bytestring    == 0.1.*,
-                       base16-bytestring    == 0.1.*,
                        base64-bytestring    == 1.0.*,
                        blaze-builder        >= 0.2.1.4 && < 0.5,
                        byteable             == 0.1.*,
@@ -124,10 +127,10 @@ Library
                        conduit-extra        >= 1.1     && < 1.2,
                        containers           >= 0.4,
                        cryptohash           >= 0.11    && < 0.12,
-                       data-default         >= 0.5.3   && < 0.6,
-                       directory            >= 1.0     && < 1.3,
+                       data-default         >= 0.5.3   && < 0.8,
+                       directory            >= 1.0     && < 2.0,
                        filepath             >= 1.1     && < 1.5,
-                       http-conduit         >= 2.1     && < 2.2,
+                       http-conduit         >= 2.1     && < 2.3,
                        http-types           >= 0.7     && < 0.10,
                        lifted-base          >= 0.1     && < 0.3,
                        monad-control        >= 0.3,
@@ -139,12 +142,12 @@ Library
                        scientific           >= 0.3,
                        tagged               >= 0.7     && < 0.9,
                        text                 >= 0.11,
-                       time                 >= 1.1.4   && < 2.0,
-                       transformers         >= 0.2.2   && < 0.5,
+                       time                 >= 1.4.0   && < 1.7,
+                       transformers         >= 0.2.2   && < 0.6,
                        unordered-containers >= 0.2,
                        utf8-string          >= 0.3     && < 1.1,
                        vector               >= 0.10,
-                       xml-conduit          >= 1.2     && <1.4
+                       xml-conduit          >= 1.2     && <1.5
  
   if !impl(ghc >= 7.6)
     Build-depends: ghc-prim
@@ -169,6 +172,23 @@ Library
 
 Executable GetObject
   Main-is: GetObject.hs
+  Hs-source-dirs: Examples
+
+  if !flag(Examples)
+    Buildable: False
+  else
+    Buildable: True
+    Build-depends:
+                       base == 4.*,
+                       aws,
+                       http-conduit,
+                       conduit,
+                       conduit-extra
+
+  Default-Language: Haskell2010
+
+Executable GetObjectGoogle
+  Main-is: GetObjectGoogle.hs
   Hs-source-dirs: Examples
 
   if !flag(Examples)
@@ -327,7 +347,7 @@ test-suite sqs-tests
         base == 4.*,
         bytestring >= 0.10,
         errors >= 2.0,
-        http-client >= 0.3,
+        http-client >= 0.3 && < 0.5,
         lifted-base >= 0.2,
         monad-control >= 0.3,
         mtl >= 2.1,
@@ -388,8 +408,9 @@ test-suite s3-tests
         aws,
         base == 4.*,
         bytestring,
-        http-client,
-        http-client-tls,
+        conduit-combinators,
+        http-client < 0.5,
+        http-client-tls < 0.5,
         http-types,
         resourcet,
         tasty >= 0.8,

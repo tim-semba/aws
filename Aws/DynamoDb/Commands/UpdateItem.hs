@@ -19,13 +19,21 @@
 --
 ----------------------------------------------------------------------------
 
-module Aws.DynamoDb.Commands.UpdateItem where
+module Aws.DynamoDb.Commands.UpdateItem
+    ( UpdateItem(..)
+    , updateItem
+    , AttributeUpdate(..)
+    , au
+    , UpdateAction(..)
+    , UpdateItemResponse(..)
+    ) where
 
 -------------------------------------------------------------------------------
 import           Control.Applicative
 import           Data.Aeson
 import           Data.Default
 import qualified Data.Text           as T
+import           Prelude
 -------------------------------------------------------------------------------
 import           Aws.Core
 import           Aws.DynamoDb.Core
@@ -55,7 +63,10 @@ updateItem
 updateItem tn key ups = UpdateItem tn key ups def def def def
 
 
-type AttributeUpdates = [AttributeUpdate]
+-- | A helper to avoid overlapping instances for 'ToJSON'.
+newtype AttributeUpdates = AttributeUpdates {
+    getAttributeUpdates :: [AttributeUpdate]
+    }
 
 
 data AttributeUpdate = AttributeUpdate {
@@ -77,7 +88,7 @@ au a = AttributeUpdate a def
 
 
 instance ToJSON AttributeUpdates where
-    toJSON = object . map mk
+    toJSON = object . map mk . getAttributeUpdates
         where
           mk AttributeUpdate { auAction = UDelete, auAttr = auAttr } =
             (attrName auAttr) .= object
@@ -114,7 +125,7 @@ instance ToJSON UpdateItem where
         object $ expectsJson uiExpect ++
           [ "TableName" .= uiTable
           , "Key" .= uiKey
-          , "AttributeUpdates" .= uiUpdates
+          , "AttributeUpdates" .= AttributeUpdates uiUpdates
           , "ReturnValues" .= uiReturn
           , "ReturnConsumedCapacity" .= uiRetCons
           , "ReturnItemCollectionMetrics" .= uiRetMet
@@ -147,7 +158,7 @@ instance FromJSON UpdateItemResponse where
 
 instance ResponseConsumer r UpdateItemResponse where
     type ResponseMetadata UpdateItemResponse = DdbResponse
-    responseConsumer _ ref resp = ddbResponseConsumer ref resp
+    responseConsumer _ _ ref resp = ddbResponseConsumer ref resp
 
 
 instance AsMemoryResponse UpdateItemResponse where

@@ -38,12 +38,14 @@ import qualified Data.Aeson            as A
 import qualified Data.Aeson.Types      as A
 import           Data.Char             (toUpper)
 import qualified Data.HashMap.Strict   as M
+import           Data.Scientific       (Scientific)
 import qualified Data.Text             as T
 import           Data.Time
 import           Data.Time.Clock.POSIX
 import           Data.Typeable
 import qualified Data.Vector           as V
 import           GHC.Generics          (Generic)
+import           Prelude
 -------------------------------------------------------------------------------
 import           Aws.Core
 import           Aws.DynamoDb.Core
@@ -60,6 +62,10 @@ capitalizeOpt = A.defaultOptions
 
 dropOpt :: Int -> A.Options
 dropOpt d = A.defaultOptions { A.fieldLabelModifier = drop d }
+
+
+convertToUTCTime :: Scientific -> UTCTime
+convertToUTCTime = posixSecondsToUTCTime . fromInteger . round
 
 
 -- | The type of a key attribute that appears in the table key or as a
@@ -210,8 +216,8 @@ data ProvisionedThroughputStatus
 instance A.FromJSON ProvisionedThroughputStatus where
     parseJSON = A.withObject "Throughput status must be an object" $ \o ->
         ProvisionedThroughputStatus
-            <$> (posixSecondsToUTCTime . fromInteger <$> o .:? "LastDecreaseDateTime" .!= 0)
-            <*> (posixSecondsToUTCTime . fromInteger <$> o .:? "LastIncreaseDateTime" .!= 0)
+            <$> (convertToUTCTime <$> o .:? "LastDecreaseDateTime" .!= 0)
+            <*> (convertToUTCTime <$> o .:? "LastIncreaseDateTime" .!= 0)
             <*> o .:? "NumberOfDecreasesToday" .!= 0
             <*> o .: "ReadCapacityUnits"
             <*> o .: "WriteCapacityUnits"
@@ -282,7 +288,7 @@ instance A.FromJSON TableDescription where
         TableDescription <$> t .: "TableName"
                          <*> t .: "TableSizeBytes"
                          <*> t .: "TableStatus"
-                         <*> (fmap (posixSecondsToUTCTime . fromInteger) <$> t .:? "CreationDateTime")
+                         <*> (fmap convertToUTCTime <$> t .:? "CreationDateTime")
                          <*> t .: "ItemCount"
                          <*> t .:? "AttributeDefinitions" .!= []
                          <*> t .:? "KeySchema"
@@ -293,7 +299,7 @@ instance A.FromJSON TableDescription where
 {- Can't derive these instances onto the return values
 instance ResponseConsumer r TableDescription where
     type ResponseMetadata TableDescription = DyMetadata
-    responseConsumer _ _ = ddbResponseConsumer
+    responseConsumer _ _ _ = ddbResponseConsumer
 instance AsMemoryResponse TableDescription where
     type MemoryResponse TableDescription = TableDescription
     loadToMemory = return
@@ -351,7 +357,7 @@ newtype CreateTableResult = CreateTableResult { ctStatus :: TableDescription }
 -- ResponseConsumer and AsMemoryResponse can't be derived
 instance ResponseConsumer r CreateTableResult where
     type ResponseMetadata CreateTableResult = DdbResponse
-    responseConsumer _ = ddbResponseConsumer
+    responseConsumer _ _ = ddbResponseConsumer
 instance AsMemoryResponse CreateTableResult where
     type MemoryResponse CreateTableResult = TableDescription
     loadToMemory = return . ctStatus
@@ -376,7 +382,7 @@ newtype DescribeTableResult = DescribeTableResult { dtStatus :: TableDescription
 -- ResponseConsumer can't be derived
 instance ResponseConsumer r DescribeTableResult where
     type ResponseMetadata DescribeTableResult = DdbResponse
-    responseConsumer _ = ddbResponseConsumer
+    responseConsumer _ _ = ddbResponseConsumer
 instance AsMemoryResponse DescribeTableResult where
     type MemoryResponse DescribeTableResult = TableDescription
     loadToMemory = return . dtStatus
@@ -408,7 +414,7 @@ newtype UpdateTableResult = UpdateTableResult { uStatus :: TableDescription }
 -- ResponseConsumer can't be derived
 instance ResponseConsumer r UpdateTableResult where
     type ResponseMetadata UpdateTableResult = DdbResponse
-    responseConsumer _ = ddbResponseConsumer
+    responseConsumer _ _ = ddbResponseConsumer
 instance AsMemoryResponse UpdateTableResult where
     type MemoryResponse UpdateTableResult = TableDescription
     loadToMemory = return . uStatus
@@ -433,7 +439,7 @@ newtype DeleteTableResult = DeleteTableResult { dStatus :: TableDescription }
 -- ResponseConsumer can't be derived
 instance ResponseConsumer r DeleteTableResult where
     type ResponseMetadata DeleteTableResult = DdbResponse
-    responseConsumer _ = ddbResponseConsumer
+    responseConsumer _ _ = ddbResponseConsumer
 instance AsMemoryResponse DeleteTableResult where
     type MemoryResponse DeleteTableResult = TableDescription
     loadToMemory = return . dStatus
@@ -459,7 +465,7 @@ instance A.FromJSON ListTablesResult where
     parseJSON = A.genericParseJSON capitalizeOpt
 instance ResponseConsumer r ListTablesResult where
     type ResponseMetadata ListTablesResult = DdbResponse
-    responseConsumer _ = ddbResponseConsumer
+    responseConsumer _ _ = ddbResponseConsumer
 instance AsMemoryResponse ListTablesResult where
     type MemoryResponse ListTablesResult = [T.Text]
     loadToMemory = return . tableNames

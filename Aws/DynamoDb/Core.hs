@@ -75,6 +75,7 @@ module Aws.DynamoDb.Core
     , Parser (..)
     , getAttr
     , getAttr'
+    , parseAttr
 
     -- * Common types used by operations
     , Conditions (..)
@@ -398,7 +399,7 @@ instance DynVal UTCTime where
 
 -------------------------------------------------------------------------------
 pico :: Rational
-pico = toRational $ 10 ^ (12 :: Integer)
+pico = toRational $ (10 :: Integer) ^ (12 :: Integer)
 
 
 -------------------------------------------------------------------------------
@@ -530,6 +531,15 @@ instance ToJSON PrimaryKey where
       let Object p1 = toJSON h
           Object p2 = toJSON r
       in Object (p1 `HM.union` p2)
+
+instance FromJSON PrimaryKey where
+    parseJSON p = do
+       l <- listPKey p
+       case length l of
+          1 -> return $ head l 
+          _ -> fail "Unable to parse PrimaryKey"     
+      where listPKey p'= map (\(txt,dval)-> hk txt dval)
+                          . HM.toList <$> parseJSON p'
 
 
 -- | A key-value pair
@@ -1141,6 +1151,7 @@ data QuerySelect
 instance Default QuerySelect where def = SelectAll
 
 -------------------------------------------------------------------------------
+querySelectJson :: KeyValue t => QuerySelect -> [t]
 querySelectJson (SelectSpecific as) =
     [ "Select" .= String "SPECIFIC_ATTRIBUTES"
     , "AttributesToGet" .= as]
@@ -1337,7 +1348,7 @@ getAttr k m = do
 -- | Parse attribute if it's present in the 'Item'. Fail if attribute
 -- is present but conversion fails.
 getAttr'
-    :: forall a. (Typeable a, DynVal a)
+    :: forall a. (DynVal a)
     => T.Text
     -- ^ Attribute name
     -> Item
@@ -1348,6 +1359,19 @@ getAttr' k m = do
       Nothing -> return Nothing
       Just dv -> return $ fromValue dv
 
+-- | Combinator for parsing an attribute into a 'FromDynItem'.
+parseAttr
+    :: FromDynItem a
+    => T.Text
+    -- ^ Attribute name
+    -> Item
+    -- ^ Item from DynamoDb
+    -> Parser a
+parseAttr k m =
+  case M.lookup k m of
+    Nothing -> fail ("Key " <> T.unpack k <> " not found")
+    Just (DMap dv) -> either (fail "...") return $ fromItem dv
+    _       -> fail ("Key " <> T.unpack k <> " is not a map!")
 
 -------------------------------------------------------------------------------
 -- | Parse an 'Item' into target type using the 'FromDynItem'

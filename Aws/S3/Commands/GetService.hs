@@ -6,9 +6,7 @@ import           Aws.Core
 import           Aws.S3.Core
 import           Data.Maybe
 import           Data.Time.Format
-#if MIN_VERSION_time(1,5,0)
-import           Data.Time.Format
-#else
+#if !MIN_VERSION_time(1,5,0)
 import           System.Locale
 #endif
 import           Text.XML.Cursor  (($/), ($//), (&|))
@@ -27,7 +25,7 @@ data GetServiceResponse
 instance ResponseConsumer r GetServiceResponse where
     type ResponseMetadata GetServiceResponse = S3Metadata
 
-    responseConsumer _ = s3XmlResponseConsumer parse
+    responseConsumer _ _ = s3XmlResponseConsumer parse
         where
           parse el = do
             owner <- forceM "Missing Owner" $ el $/ Cu.laxElement "Owner" &| parseUserInfo

@@ -18,9 +18,7 @@ import           Data.Monoid
 import           Control.Applicative            ((<|>))
 import           Data.Time
 import           Data.Typeable
-#if MIN_VERSION_time(1,5,0)
-import           Data.Time.Format
-#else
+#if !MIN_VERSION_time(1,5,0)
 import           System.Locale
 #endif
 import           Text.XML.Cursor                (($/), (&|))
@@ -38,6 +36,7 @@ import qualified Network.HTTP.Conduit           as HTTP
 import qualified Network.HTTP.Types             as HTTP
 import qualified Text.XML                       as XML
 import qualified Text.XML.Cursor                as Cu
+import           Prelude
 
 data S3Authorization
     = S3AuthorizationHeader
@@ -462,6 +461,68 @@ data ObjectId
       , oidVersion :: Maybe T.Text
       }
     deriving (Show)
+
+data ObjectVersionInfo
+    = ObjectVersion {
+        oviKey          :: T.Text
+      , oviVersionId    :: T.Text
+      , oviIsLatest     :: Bool
+      , oviLastModified :: UTCTime
+      , oviETag         :: T.Text
+      , oviSize         :: Integer
+      , oviStorageClass :: StorageClass
+      , oviOwner        :: Maybe UserInfo
+      }
+    | DeleteMarker {
+        oviKey          :: T.Text
+      , oviVersionId    :: T.Text
+      , oviIsLatest     :: Bool
+      , oviLastModified :: UTCTime
+      , oviOwner        :: Maybe UserInfo
+      }
+    deriving (Show)
+
+parseObjectVersionInfo :: MonadThrow m => Cu.Cursor -> m ObjectVersionInfo
+parseObjectVersionInfo el
+    = do key <- force "Missing object Key" $ el $/ elContent "Key"
+         versionId <- force "Missing object VersionId" $ el $/ elContent "VersionId"
+         isLatest <- forceM "Missing object IsLatest" $ el $/ elContent "IsLatest" &| textReadBool
+         let time s = case (parseTime defaultTimeLocale "%Y-%m-%dT%H:%M:%S%QZ" $ T.unpack s) <|>
+                           (parseTime defaultTimeLocale "%Y-%m-%dT%H:%M:%S%Q%Z" $ T.unpack s) of
+                        Nothing -> throwM $ XmlException "Invalid time"
+                        Just v -> return v
+         lastModified <- forceM "Missing object LastModified" $ el $/ elContent "LastModified" &| time
+         owner <- case el $/ Cu.laxElement "Owner" &| parseUserInfo of
+                    (x:_) -> fmap' Just x
+                    [] -> return Nothing
+         case Cu.node el of
+           XML.NodeElement e | elName e == "Version" ->
+             do eTag <- force "Missing object ETag" $ el $/ elContent "ETag"
+                size <- forceM "Missing object Size" $ el $/ elContent "Size" &| textReadInt
+                storageClass <- forceM "Missing object StorageClass" $ el $/ elContent "StorageClass" &| return . parseStorageClass
+                return ObjectVersion{
+                             oviKey          = key
+                           , oviVersionId    = versionId
+                           , oviIsLatest     = isLatest
+                           , oviLastModified = lastModified
+                           , oviETag         = eTag
+                           , oviSize         = size
+                           , oviStorageClass = storageClass
+                           , oviOwner        = owner
+                           }
+           XML.NodeElement e | elName e == "DeleteMarker" ->
+             return DeleteMarker{
+                             oviKey          = key
+                           , oviVersionId    = versionId
+                           , oviIsLatest     = isLatest
+                           , oviLastModified = lastModified
+                           , oviOwner        = owner
+                           }
+           _ -> throwM $ XmlException "Invalid object version tag"
+    where
+      elName = XML.nameLocalName . XML.elementName
+      fmap' :: Monad m => (a -> b) -> m a -> m b
+      fmap' f ma = ma >>= return . f
 
 data ObjectInfo
     = ObjectInfo {
