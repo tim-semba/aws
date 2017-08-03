@@ -11,7 +11,7 @@ main :: IO ()
 main = do
   Just creds <- Aws.loadCredentialsFromEnv
   let cfg = Aws.Configuration Aws.Timestamp creds (Aws.defaultLog Aws.Debug)
-  let s3cfg = S3.s3 Aws.HTTP "storage.googleapis.com" False
+  let s3cfg = S3.s3 Aws.HTTP (S3.Region "storage.googleapis.com" "US") False
   {- Set up a ResourceT region with an available HTTP manager. -}
   withManager $ \mgr -> do
     {- Create a request object with S3.getObject and run the request with pureAws. -}
