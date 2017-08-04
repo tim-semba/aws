@@ -8,6 +8,7 @@ import           Control.Monad.IO.Class
 import           Control.Monad.Trans.Resource   (MonadThrow, throwM)
 import           Crypto.Hash
 import           Data.Byteable
+import           Data.Char                      (isAscii, isAlphaNum, toUpper, ord)
 import           Data.Conduit                   (($$+-))
 import           Data.Function
 import           Data.Functor                   ((<$>))
@@ -18,6 +19,7 @@ import           Data.Monoid
 import           Control.Applicative            ((<|>))
 import           Data.Time
 import           Data.Typeable
+import           Numeric                        (showHex)
 #if !MIN_VERSION_time(1,5,0)
 import           System.Locale
 #endif
@@ -234,7 +236,7 @@ s3SignQuery S3Query{..} S3Configuration{..} sd@SignatureData{..}
                                                  | otherwise = x1 : merge (x2 : xs)
                 merge xs = xs
 
-      urlEncodedS3QObject = HTTP.urlEncode False <$> s3QObject
+      urlEncodedS3QObject = s3UriEncode False <$> s3QObject
       (host, path) = case s3RequestStyle of
                        PathStyle   -> ([Just (rUri s3Region)], [Just "/", fmap (`B8.snoc` '/') s3QBucket, urlEncodedS3QObject])
                        BucketStyle -> ([s3QBucket, Just (rUri s3Region)], [Just "/", urlEncodedS3QObject])
@@ -312,6 +314,22 @@ s3SignQuery S3Query{..} S3Configuration{..} sd@SignatureData{..}
             , (hAmzDate, sigTime)
             , (hAmzExpires, B8.pack . show . floor $ diffUTCTime time signatureTime)
             , (hAmzSignedHeaders, "host") ] ++ iamTok
+
+-- | Custom UriEncode function
+-- see <http://docs.aws.amazon.com/AmazonS3/latest/API/sig-v4-header-based-auth.html>
+s3UriEncode
+  :: Bool         -- ^ Whether encode `/` characters
+  -> B.ByteString
+  -> B.ByteString
+s3UriEncode encodeSlash = B8.concatMap $ \c ->
+  if (isAscii c && isAlphaNum c) || (c `elem` nonEncodeMarks)
+    then B8.singleton c
+    else B8.pack $ '%' : map toUpper (showHex (ord c) "")
+  where
+    nonEncodeMarks :: String
+    nonEncodeMarks = if encodeSlash
+      then "_-~."
+      else "_-~./"
 
 s3ResponseConsumer :: HTTPResponseConsumer a
                          -> IORef S3Metadata
