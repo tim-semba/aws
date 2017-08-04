@@ -207,7 +207,7 @@ s3SignQuery S3Query{..} S3Configuration{..} sd@SignatureData{..}
       , sqHost = B.intercalate "." $ catMaybes host
       , sqPort = s3Port
       , sqPath = mconcat $ catMaybes path
-      , sqQuery = sortedSubresources ++ s3QQuery ++ (fmap (\(x, y) -> (CI.original x, Just y)) authQuery) :: HTTP.Query
+      , sqQuery = sortedQueries ++ (fmap (\(x, y) -> (CI.original x, Just y)) authQuery) :: HTTP.Query
       , sqDate = Just signatureTime
       , sqAuthorization = authorization
       , sqContentType = s3QContentType
@@ -241,7 +241,7 @@ s3SignQuery S3Query{..} S3Configuration{..} sd@SignatureData{..}
                        PathStyle   -> ([Just (rUri s3Region)], [Just "/", fmap (`B8.snoc` '/') s3QBucket, urlEncodedS3QObject])
                        BucketStyle -> ([s3QBucket, Just (rUri s3Region)], [Just "/", urlEncodedS3QObject])
                        VHostStyle  -> ([Just $ fromMaybe (rUri s3Region) s3QBucket], [Just "/", urlEncodedS3QObject])
-      sortedSubresources = sort s3QSubresources
+      sortedQueries = sort $ s3QSubresources ++ s3QQuery
 
       ti = case (s3UseUri, signatureTimeInfo) of
              (False, ti') -> ti'
@@ -287,7 +287,7 @@ s3SignQuery S3Query{..} S3Configuration{..} sd@SignatureData{..}
       stringToSign = B.concat $ intercalate ["\n"] $
                        [ [httpMethod s3QMethod]               -- method
                        , [mconcat . catMaybes $ path]         -- path
-                       , [HTTP.renderQuery False queryString] -- query string
+                       , [s3RenderQuery False queryString]    -- query string
                        ] ++
                        map (\(a,b) -> [CI.foldedCase a,":",b]) headers ++
                        [ [] -- end headers
@@ -296,8 +296,8 @@ s3SignQuery S3Query{..} S3Configuration{..} sd@SignatureData{..}
                        ]
 
       (payloadHash, queryString, headers) = case ti of
-        AbsoluteTimestamp _  -> (fromMaybe emptyBodyHash $ lookup hAmzContentSha256 amzHeaders, [], canonicalHeaders)
-        AbsoluteExpires time -> ("UNSIGNED-PAYLOAD", HTTP.toQuery . fmap (\(x,y) -> (CI.original x, y)) $ makeAuthQuery time, [("host", B.intercalate "." $ catMaybes host)])
+        AbsoluteTimestamp _  -> (fromMaybe emptyBodyHash $ lookup hAmzContentSha256 amzHeaders, sortedQueries, canonicalHeaders)
+        AbsoluteExpires time -> ("UNSIGNED-PAYLOAD", (sortedQueries ++) . HTTP.toQuery . fmap (\(x,y) -> (CI.original x, y)) $ makeAuthQuery time, [("host", B.intercalate "." $ catMaybes host)])
 
       auth = authorizationV4' sd HmacSHA256 (rName s3Region) "s3"
                        (B.concat (intersperse ";" (map (CI.foldedCase . fst) canonicalHeaders)))
@@ -330,6 +330,18 @@ s3UriEncode encodeSlash = B8.concatMap $ \c ->
     nonEncodeMarks = if encodeSlash
       then "_-~."
       else "_-~./"
+
+s3RenderQuery
+  :: Bool -- ^ Whether prepend a question mark
+  -> HTTP.Query
+  -> B.ByteString
+s3RenderQuery qm = mconcat . qmf . intersperse (B8.singleton '&') . map renderItem
+  where
+    qmf = if qm then ("?":) else id
+
+    renderItem :: HTTP.QueryItem -> B8.ByteString
+    renderItem (k, Just v) = s3UriEncode True k <> "=" <> s3UriEncode True v
+    renderItem (k, Nothing) = s3UriEncode True k <> "="
 
 s3ResponseConsumer :: HTTPResponseConsumer a
                          -> IORef S3Metadata
