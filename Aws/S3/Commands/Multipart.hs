@@ -13,16 +13,18 @@ import           Data.ByteString.Char8 ({- IsString -})
 import           Data.Conduit
 import qualified Data.Conduit.List     as CL
 import           Data.Maybe
+import           Data.Byteable
 import           Text.XML.Cursor       (($/))
-import qualified Data.ByteString.Char8 as B8
-import qualified Data.ByteString.Lazy  as BL
-import qualified Data.CaseInsensitive  as CI
-import qualified Data.Map              as M
-import qualified Data.Text             as T
-import qualified Data.Text.Encoding    as T
-import qualified Network.HTTP.Conduit  as HTTP
-import qualified Network.HTTP.Types    as HTTP
-import qualified Text.XML              as XML
+import qualified Data.ByteString.Base16 as Base16
+import qualified Data.ByteString.Char8  as B8
+import qualified Data.ByteString.Lazy   as BL
+import qualified Data.CaseInsensitive   as CI
+import qualified Data.Map               as M
+import qualified Data.Text              as T
+import qualified Data.Text.Encoding     as T
+import qualified Network.HTTP.Conduit   as HTTP
+import qualified Network.HTTP.Types     as HTTP
+import qualified Text.XML               as XML
 import           Prelude
 
 {-
@@ -130,6 +132,7 @@ data UploadPart = UploadPart {
   , upUploadId :: T.Text
   , upContentType :: Maybe B8.ByteString
   , upContentMD5 :: Maybe (Digest MD5)
+  , upContentSHA256 :: Maybe (Digest SHA256)
   , upServerSideEncryption :: Maybe ServerSideEncryption
   , upRequestBody  :: HTTP.RequestBody
   , upExpect100Continue :: Bool -- ^ Note: Requires http-client >= 0.4.10
@@ -138,7 +141,7 @@ data UploadPart = UploadPart {
 uploadPart :: Bucket -> T.Text -> Integer -> T.Text -> HTTP.RequestBody -> UploadPart
 uploadPart bucket obj p i body =
   UploadPart obj bucket p i
-  Nothing Nothing Nothing body False
+  Nothing Nothing Nothing Nothing body False
 
 data UploadPartResponse
   = UploadPartResponse {
@@ -160,7 +163,7 @@ instance SignQuery UploadPart where
                                , s3QQuery = []
                                , s3QContentType = upContentType
                                , s3QContentMd5 = upContentMD5
-                               , s3QAmzHeaders = map (second T.encodeUtf8) $ catMaybes [
+                               , s3QAmzHeaders = (sha256Header:) . map (second T.encodeUtf8) $ catMaybes [
                                    ("x-amz-server-side-encryption",) <$> writeServerSideEncryption <$> upServerSideEncryption
                                  ]
                                , s3QOtherHeaders = catMaybes [
@@ -170,6 +173,8 @@ instance SignQuery UploadPart where
                                  ]
                                , s3QRequestBody = Just upRequestBody
                                }
+      where
+        sha256Header = (hAmzContentSha256, fromMaybe "UNSIGNED-PAYLOAD" (Base16.encode . toBytes <$> upContentSHA256))
 
 instance ResponseConsumer UploadPart UploadPartResponse where
     type ResponseMetadata UploadPartResponse = S3Metadata
@@ -224,7 +229,8 @@ instance SignQuery CompleteMultipartUpload where
       , s3QQuery = []
       , s3QContentType = Nothing
       , s3QContentMd5 = Nothing
-      , s3QAmzHeaders = catMaybes [ ("x-amz-expiration",) <$> (T.encodeUtf8 <$> cmuExpiration)
+      , s3QAmzHeaders = catMaybes [ Just (hAmzContentSha256, Base16.encode . toBytes $ (hashlazy reqBody :: Digest SHA256))
+                                  , ("x-amz-expiration",) <$> (T.encodeUtf8 <$> cmuExpiration)
                                   , ("x-amz-server-side-encryption",) <$> (T.encodeUtf8 <$> cmuServerSideEncryption)
                                   , ("x-amz-server-side-encryption-customer-algorithm",)
                                     <$> (T.encodeUtf8 <$> cmuServerSideEncryptionCustomerAlgorithm)
