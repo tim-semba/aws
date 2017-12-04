@@ -3,12 +3,15 @@ module Aws.S3.Commands.PutBucket where
 import           Aws.Core
 import           Aws.S3.Core
 import           Control.Monad
+import           Crypto.Hash
+import           Data.Byteable
 import           Data.Maybe
-import qualified Data.Map             as M
-import qualified Data.Text            as T
-import qualified Data.Text.Encoding   as T
-import qualified Network.HTTP.Conduit as HTTP
-import qualified Text.XML             as XML
+import qualified Data.ByteString.Base16 as Base16
+import qualified Data.Map               as M
+import qualified Data.Text              as T
+import qualified Data.Text.Encoding     as T
+import qualified Network.HTTP.Conduit   as HTTP
+import qualified Text.XML               as XML
 
 data PutBucket
     = PutBucket {
@@ -38,20 +41,21 @@ instance SignQuery PutBucket where
                                            , s3QContentType  = Nothing
                                            , s3QContentMd5   = Nothing
                                            , s3QObject       = Nothing
-                                           , s3QAmzHeaders   = case pbCannedAcl of
+                                           , s3QAmzHeaders   = ((hAmzContentSha256, Base16.encode . toBytes $ (hashlazy xmlBody :: Digest SHA256)):) $
+                                                               case pbCannedAcl of
                                                                  Nothing -> []
                                                                  Just acl -> [("x-amz-acl", T.encodeUtf8 $ writeCannedAcl acl)]
                                            , s3QOtherHeaders = []
                                            , s3QRequestBody
                                                = guard (not (null elts)) >>
-                                                 (Just . HTTP.RequestBodyLBS . XML.renderLBS XML.def)
-                                                 XML.Document {
-                                                          XML.documentPrologue = XML.Prologue [] Nothing []
-                                                        , XML.documentRoot = root
-                                                        , XML.documentEpilogue = []
-                                                        }
+                                                 (Just . HTTP.RequestBodyLBS $ xmlBody)
                                            })
-        where root = XML.Element {
+        where xmlBody = XML.renderLBS XML.def $ XML.Document
+                { XML.documentPrologue = XML.Prologue [] Nothing []
+                , XML.documentRoot = root
+                , XML.documentEpilogue = []
+                }
+              root = XML.Element {
                                XML.elementName = "{http://s3.amazonaws.com/doc/2006-03-01/}CreateBucketConfiguration"
                              , XML.elementAttributes = M.empty
                              , XML.elementNodes = elts
